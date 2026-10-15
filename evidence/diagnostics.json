@@ -1,0 +1,118 @@
+{
+  "student": {
+    "student_id": "2A202602982",
+    "split_seed": 301,
+    "model_seed": 2630,
+    "v_ego": 12.0
+  },
+  "measurement_recipe": "REPORT.md appendix; read-only predictions from saved models and replay messages",
+  "full_run_command": "python run_all.py --student-id 2A202602982 --seeds 5",
+  "quick": false,
+  "training_seeds": [
+    2630,
+    2631,
+    2632,
+    2633,
+    2634
+  ],
+  "trajectories": {
+    "train": 6727,
+    "test": 2883
+  },
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy": "2.5.4",
+    "pandas": "3.0.6",
+    "matplotlib": "3.11.2",
+    "thread_limits": {
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1"
+    }
+  },
+  "data": {
+    "filename": "argoverse_step3.csv",
+    "bytes": 195380179,
+    "sha256": "0739657faf49edc3c59198748d7741fb589d3a90b946490fd295c4a5acf2d82f"
+  },
+  "implementation_commit": "f4c3281252bb574a0f3ae9cb33aaab54181963b1",
+  "PercMLP+_openloop_per_seed": [
+    {
+      "seed": 2630,
+      "all": 0.8242684006690979,
+      "brake_slice": 1.0065569877624512,
+      "slice_share": 0.043805784145815055
+    },
+    {
+      "seed": 2631,
+      "all": 0.8066162467002869,
+      "brake_slice": 1.010520100593567,
+      "slice_share": 0.043805784145815055
+    },
+    {
+      "seed": 2632,
+      "all": 0.8310772776603699,
+      "brake_slice": 0.980894923210144,
+      "slice_share": 0.043805784145815055
+    },
+    {
+      "seed": 2633,
+      "all": 0.8282359838485718,
+      "brake_slice": 1.0002162456512451,
+      "slice_share": 0.043805784145815055
+    },
+    {
+      "seed": 2634,
+      "all": 0.8127710819244385,
+      "brake_slice": 0.9512749910354614,
+      "slice_share": 0.043805784145815055
+    }
+  ],
+  "aeb_inspection": {
+    "segment": 59,
+    "aeb_ttc_s": 1.5,
+    "differing_frames": 4,
+    "frame_indices": [
+      98,
+      99,
+      100,
+      101
+    ],
+    "first_five": [
+      {
+        "frame": 98,
+        "gap_m": 4.3033,
+        "closing_m_s": 2.9189,
+        "ttc_s": 1.4742882592757547,
+        "original_cmd_m_s2": -5.436313161944227,
+        "aeb_cmd_m_s2": -6.0
+      },
+      {
+        "frame": 99,
+        "gap_m": 4.0581,
+        "closing_m_s": 2.8313,
+        "ttc_s": 1.4332991911842614,
+        "original_cmd_m_s2": -5.775099464480195,
+        "aeb_cmd_m_s2": -6.0
+      },
+      {
+        "frame": 100,
+        "gap_m": 3.8297,
+        "closing_m_s": 2.6761,
+        "ttc_s": 1.431075071933037,
+        "original_cmd_m_s2": -5.9110399333612005,
+        "aeb_cmd_m_s2": -6.0
+      },
+      {
+        "frame": 101,
+        "gap_m": 3.6232,
+        "closing_m_s": 2.4324000000000003,
+        "ttc_s": 1.4895576385462916,
+        "original_cmd_m_s2": -5.675861911370845,
+        "aeb_cmd_m_s2": -6.0
+      }
+    ]
+  },
+  "generator_source": "\"\"\"Generate supplementary measurements; never enter experimental numbers by hand.\"\"\"\nimport hashlib\nimport json\nimport os\nimport platform\nimport subprocess\nimport sys\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nsys.path.insert(0, str(ROOT))\nimport matplotlib\nimport numpy as np\nimport pandas as pd\nfrom lab12 import config as C, data, models, replay as R\n\nev = lambda name: json.loads((C.EVID_DIR / f\"{name}.json\").read_text())\nstudent = ev(\"closedloop\")[\"student\"]\nlogs = data.load_logs()\ntrain, test = data.split_indices(len(logs), student[\"split_seed\"])\n_, X, Y, brake, _ = models.build_windows(logs, test)\nseeds = [r[\"seed\"] for r in ev(\"closedloop\")[\"logs\"][\"PercMLP+\"][\"per_seed\"]]\nl2 = []\nfor seed in seeds:\n    model = models.Learned.load(C.WORK_DIR / \"models\" / f\"percfix_{seed}.npz\")\n    l2.append({\"seed\": seed, **models.l2_summary(model.predict(X), Y, brake)})\n\nsegment = ev(\"replay\")[\"behaviour_change_aeb\"][\"differing_segments\"][0]\nmessages = R.read_log(C.WORK_DIR / \"replay_log.jsonl\")[segment]\nplain, aeb = R.IDMStream(), R.IDMStream(aeb_ttc=1.5)\nv, frame, rows = 0.0, 0, []\nfor message in messages:\n    old, new = plain.on_msg(message), aeb.on_msg(message)\n    if message[\"topic\"] == \"/can\":\n        v = message[\"v_ego\"]\n        continue\n    if abs(old - new) > 1e-3 + 1e-3 * abs(old):\n        closing = v - message[\"v_lead\"]\n        rows.append({\"frame\": frame, \"gap_m\": message[\"gap\"],\n                     \"closing_m_s\": closing, \"ttc_s\": message[\"gap\"] / closing,\n                     \"original_cmd_m_s2\": old, \"aeb_cmd_m_s2\": new})\n    frame += 1\n\nwith C.CSV_PATH.open(\"rb\") as stream:\n    csv_sha256 = hashlib.file_digest(stream, \"sha256\").hexdigest()\nresult = {\n    \"student\": student,\n    \"measurement_recipe\": \"REPORT.md appendix; read-only predictions from saved models and replay messages\",\n    \"full_run_command\": \"python run_all.py --student-id 2A202602982 --seeds 5\",\n    \"quick\": False,\n    \"training_seeds\": seeds,\n    \"trajectories\": {\"train\": len(train), \"test\": len(test)},\n    \"environment\": {\"python\": platform.python_version(), \"platform\": platform.platform(),\n                    \"numpy\": np.__version__, \"pandas\": pd.__version__, \"matplotlib\": matplotlib.__version__,\n                    \"thread_limits\": {k: os.environ.get(k) for k in\n                                      (\"OPENBLAS_NUM_THREADS\", \"OMP_NUM_THREADS\", \"MKL_NUM_THREADS\")}},\n    \"data\": {\"filename\": C.CSV_PATH.name, \"bytes\": C.CSV_PATH.stat().st_size, \"sha256\": csv_sha256},\n    \"implementation_commit\": subprocess.check_output([\"git\", \"rev-parse\", \"HEAD\"], cwd=ROOT, text=True).strip(),\n    \"PercMLP+_openloop_per_seed\": l2,\n    \"aeb_inspection\": {\"segment\": segment, \"aeb_ttc_s\": aeb.aeb_ttc,\n                       \"differing_frames\": len(rows), \"frame_indices\": [r[\"frame\"] for r in rows],\n                       \"first_five\": rows[:5]},\n    \"generator_source\": Path(__file__).read_text(encoding=\"utf-8\"),\n}\noutput = C.EVID_DIR / \"diagnostics.json\"\noutput.write_text(json.dumps(result, indent=2), encoding=\"utf-8\")\nprint(json.dumps({k: v for k, v in result.items() if k != \"generator_source\"}, indent=2))\n"
+}
