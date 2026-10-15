@@ -2,7 +2,7 @@
 
 | Thông tin | Giá trị |
 |---|---|
-| Họ và tên | Hà Mạnh Tuấn |
+| Họ và tên | Hà Mạnh Tuân |
 | MSSV (đúng bằng `--student-id` đã chạy) | `2A202602982` |
 | GitHub | [tuanfptu](https://github.com/tuanfptu) |
 | Repository nộp bài | [K4-Track4-DAY12-HaManhTuan-2A202602982](https://github.com/tuanfptu/K4-Track4-DAY12-HaManhTuan-2A202602982) |
